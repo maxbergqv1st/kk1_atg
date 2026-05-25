@@ -1,0 +1,128 @@
+import sys
+from pathlib import Path
+
+# Lägg till repo-roten i path så att utils.py hittas
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+
+from app.routers import races, horses
+
+app = FastAPI(title="ATG Travanalys")
+
+app.include_router(races.router)
+app.include_router(horses.router)
+
+
+HTML = """
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <title>ATG Travanalys</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+    h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
+    p.sub { color: #666; margin-top: 0; }
+    input, button { font-size: 1rem; padding: 0.4rem 0.8rem; margin: 0.25rem 0; }
+    button { background: #2563eb; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.9rem; }
+    th { background: #f1f5f9; text-align: left; padding: 0.5rem; border-bottom: 2px solid #cbd5e1; }
+    td { padding: 0.45rem 0.5rem; border-bottom: 1px solid #e2e8f0; }
+    tr:hover td { background: #f8fafc; }
+    .won { color: #16a34a; font-weight: bold; }
+    .section { margin-top: 2.5rem; }
+    #upcomingStatus, #formStatus { color: #64748b; font-style: italic; margin: 0.5rem 0; }
+  </style>
+</head>
+<body>
+  <h1>ATG Travanalys</h1>
+  <p class="sub">Visa data från historik och kommande lopp</p>
+
+  <div class="section">
+    <h2>Kommande starter</h2>
+    <input id="dateInput" type="date">
+    <button onclick="loadUpcoming()">Hämta</button>
+    <p id="upcomingStatus"></p>
+    <table>
+      <thead><tr>
+        <th>Speltyp</th><th>Avd</th><th>Bana</th><th>Häst</th><th>Kusk</th><th>Spår</th>
+      </tr></thead>
+      <tbody id="upcomingBody"></tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Hästens form</h2>
+    <input id="horseInput" type="text" placeholder="Hästnamn" style="width:220px">
+    <button onclick="loadForm()">Sök</button>
+    <p id="formStatus"></p>
+    <table>
+      <thead><tr>
+        <th>Datum</th><th>Bana</th><th>Distans</th><th>Spår</th>
+        <th>Placering</th><th>Odds</th><th>Tid (s)</th><th>Vann</th>
+      </tr></thead>
+      <tbody id="formBody"></tbody>
+    </table>
+  </div>
+
+  <script>
+    document.getElementById("dateInput").value = new Date().toISOString().slice(0, 10);
+
+    async function loadUpcoming() {
+      const day = document.getElementById("dateInput").value;
+      const status = document.getElementById("upcomingStatus");
+      const tbody = document.getElementById("upcomingBody");
+      status.textContent = "Hämtar...";
+      tbody.innerHTML = "";
+      try {
+        const res = await fetch(`/api/races/upcoming?day=${day}`);
+        if (!res.ok) throw new Error((await res.json()).detail);
+        const data = await res.json();
+        status.textContent = `${data.length} starter hittades`;
+        tbody.innerHTML = data.map(r => `<tr>
+          <td>${r.game_type ?? "–"}</td>
+          <td>${r.division ?? "–"}</td>
+          <td>${r.track ?? "–"}</td>
+          <td>${r.horse_name ?? "–"}</td>
+          <td>${r.driver_name ?? "–"}</td>
+          <td>${r.post_position ?? "–"}</td>
+        </tr>`).join("");
+      } catch(e) { status.textContent = "Fel: " + e.message; }
+    }
+
+    async function loadForm() {
+      const name = document.getElementById("horseInput").value.trim();
+      if (!name) return;
+      const status = document.getElementById("formStatus");
+      const tbody = document.getElementById("formBody");
+      status.textContent = "Hämtar...";
+      tbody.innerHTML = "";
+      try {
+        const res = await fetch(`/api/horses/${encodeURIComponent(name)}/form`);
+        if (!res.ok) throw new Error((await res.json()).detail);
+        const data = await res.json();
+        status.textContent = `Senaste ${data.length} lopp för ${name}`;
+        tbody.innerHTML = data.map(r => `<tr>
+          <td>${r.date}</td>
+          <td>${r.track ?? "–"}</td>
+          <td>${r.distance_m ?? "–"} m</td>
+          <td>${r.post_position ?? "–"}</td>
+          <td>${r.finish_position ?? "–"}</td>
+          <td>${r.odds ?? "–"}</td>
+          <td>${r.race_time_sec ?? "–"}</td>
+          <td class="${r.won ? 'won' : ''}">${r.won ? "Ja" : "Nej"}</td>
+        </tr>`).join("");
+      } catch(e) { status.textContent = "Fel: " + e.message; }
+    }
+  </script>
+</body>
+</html>
+"""
+
+
+@app.get("/", response_class=HTMLResponse)
+def index():
+    return HTML
