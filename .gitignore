@@ -1,2 +1,5 @@
 .venv
+.claude
 data
+__pycache__
+*.pyc
